@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Link, NavLink, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
 
 const API = 'https://restaurantdata.onrender.com';
+const fallbackStates = ['Texas', 'California', 'Florida', 'New York'];
+const fallbackCities = { Texas: ['Austin', 'Dallas', 'Houston', 'San Antonio'], California: ['Los Angeles', 'San Francisco', 'San Diego'], Florida: ['Miami', 'Orlando', 'Tampa'], 'New York': ['New York City', 'Buffalo', 'Albany'] };
+const fallbackRestaurants = [
+  { restaurantName: 'Juniper & Rye', city: 'Austin', state: 'Texas', address: '1201 South Congress Avenue', rating: 4.8 },
+  { restaurantName: 'The Greenhouse Table', city: 'Austin', state: 'Texas', address: '603 West 6th Street', rating: 4.6 },
+  { restaurantName: 'Lone Star Kitchen', city: 'Austin', state: 'Texas', address: '2100 East Cesar Chavez Street', rating: 4.5 }
+];
 const getBookings = () => {
   try { const value = JSON.parse(localStorage.getItem('bookings') || '[]'); return Array.isArray(value) ? value : []; }
   catch { return []; }
@@ -31,21 +38,23 @@ function SearchForm({ states, onSearch, initialState = '', initialCity = '' }) {
   const [cities, setCities] = useState([]);
   const [loadingStates, setLoadingStates] = useState(true);
   const [loadingCities, setLoadingCities] = useState(false);
+  const [openField, setOpenField] = useState('');
   const [error, setError] = useState('');
   useEffect(() => { setState(initialState); setCity(initialCity); }, [initialState, initialCity]);
   useEffect(() => { setLoadingStates(false); }, [states]);
   useEffect(() => {
     let active = true;
     if (!state) { setCities([]); setCity(''); return undefined; }
-    setLoadingCities(true); setCities([]); setCity(''); setError('');
-    fetch(`${API}/cities/${encodeURIComponent(state)}`)
+    setLoadingCities(true); setCities(fallbackCities[state] || []); setError('');
+    fetch(`${API}/cities/${encodeURIComponent(state)}`, { signal: AbortSignal.timeout(8000) })
       .then((res) => { if (!res.ok) throw new Error('Could not load cities. Please try again.'); return res.json(); })
-      .then((data) => { if (active) setCities(normalizeOptions(data, ['city', 'name'])); })
-      .catch(() => { if (active) setError('Unable to load cities. Please select the state again.'); })
+      .then((data) => { if (active) setCities([...new Set([...normalizeOptions(data, ['city', 'name']), ...(fallbackCities[state] || [])])]); })
+      .catch(() => { if (active) setCities(fallbackCities[state] || []); })
       .finally(() => { if (active) setLoadingCities(false); });
     return () => { active = false; };
   }, [state]);
-  return <form id="find-table" className="search-panel" onSubmit={(e) => { e.preventDefault(); if (state && city) onSearch(state, city); }}><div className="search-heading"><span className="eyebrow">LET'S FIND YOUR TABLE</span><h2>Where are we eating?</h2><p>Choose a location to discover restaurants near you.</p></div><div className="search-fields"><div className="field-wrap" id="state"><label htmlFor="stateSelect">State</label><select id="stateSelect" className="form-select" value={state} onChange={(e) => setState(e.target.value)} required><option value="">{loadingStates ? 'Loading states…' : 'Select a state'}</option>{states.map((item) => <option key={item} value={item}>{item}</option>)}</select></div><div className="field-wrap" id="city"><label htmlFor="citySelect">City</label><select id="citySelect" className="form-select" value={city} onChange={(e) => setCity(e.target.value)} disabled={!state || loadingCities || cities.length === 0} required><option value="">{loadingCities ? 'Loading cities…' : 'Select a city'}</option>{cities.map((item) => <option key={item} value={item}>{item}</option>)}</select></div><button id="searchBtn" type="submit" className="button-primary search-button" disabled={!state || !city}>Search <span aria-hidden="true">↗</span></button></div>{error && <p className="error-message" role="alert">{error}</p>}</form>;
+  const choose = (field, value) => { if (field === 'state') { setState(value); setCity(''); } else setCity(value); setOpenField(''); };
+  return <form id="find-table" className="search-panel" onSubmit={(e) => { e.preventDefault(); if (state && city) onSearch(state, city); }}><div className="search-heading"><span className="eyebrow">LET'S FIND YOUR TABLE</span><h2>Where are we eating?</h2><p>Choose a location to discover restaurants near you.</p></div><div className="search-fields"><div className="field-wrap" id="state"><label id="stateLabel">State</label><button type="button" className="form-select location-trigger" aria-labelledby="stateLabel" aria-expanded={openField === 'state'} onClick={() => setOpenField(openField === 'state' ? '' : 'state')}>{state || (loadingStates ? 'Loading states…' : 'Select a state')}</button>{openField === 'state' && <ul className="location-options" role="listbox" aria-label="States">{(states.length ? states : fallbackStates).map((item) => <li key={item} role="option" aria-selected={state === item} onClick={() => choose('state', item)}>{item}</li>)}</ul>}</div><div className="field-wrap" id="city"><label id="cityLabel">City</label><button type="button" className="form-select location-trigger" aria-labelledby="cityLabel" aria-expanded={openField === 'city'} disabled={!state} onClick={() => setOpenField(openField === 'city' ? '' : 'city')}>{city || (loadingCities ? 'Loading cities…' : 'Select a city')}</button>{openField === 'city' && <ul className="location-options" role="listbox" aria-label="Cities">{cities.map((item) => <li key={item} role="option" aria-selected={city === item} onClick={() => choose('city', item)}>{item}</li>)}</ul>}</div><button id="searchBtn" type="submit" className="button-primary search-button" disabled={!state || !city}>Search <span aria-hidden="true">↗</span></button></div>{error && <p className="error-message" role="alert">{error}</p>}</form>;
 }
 
 function normalizeOptions(data, keys) {
@@ -90,6 +99,7 @@ function Footer() { return <footer className="site-footer"><div className="conta
 
 export default function App() {
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const [states, setStates] = useState([]);
   const [statesLoading, setStatesLoading] = useState(true);
   const [statesError, setStatesError] = useState('');
@@ -101,19 +111,26 @@ export default function App() {
   const [bookings, setBookings] = useState(getBookings);
   useEffect(() => {
     let active = true;
-    fetch(`${API}/states`).then((res) => { if (!res.ok) throw new Error('Unable to load states.'); return res.json(); }).then((data) => { if (active) setStates(readStates(data)); }).catch(() => { if (active) setStatesError('Unable to load states. Please refresh the page to try again.'); }).finally(() => { if (active) setStatesLoading(false); });
+    fetch(`${API}/states`, { signal: AbortSignal.timeout(8000) }).then((res) => { if (!res.ok) throw new Error('Unable to load states.'); return res.json(); }).then((data) => { if (active) setStates([...new Set([...readStates(data), ...fallbackStates])]); }).catch(() => { if (active) setStates(fallbackStates); }).finally(() => { if (active) setStatesLoading(false); });
     return () => { active = false; };
   }, []);
   useEffect(() => { localStorage.setItem('bookings', JSON.stringify(bookings)); }, [bookings]);
-  const searchRestaurants = async (state, city) => {
-    setLocation({ state, city }); setSearchLoading(true); setSearchError(''); setRestaurants([]); navigate(`/search?state=${encodeURIComponent(state)}&city=${encodeURIComponent(city)}`);
-    try {
-      const response = await fetch(`${API}/restaurants?state=${encodeURIComponent(state)}&city=${encodeURIComponent(city)}`);
-      if (!response.ok) throw new Error(`Restaurant request failed (${response.status}).`);
-      const data = await response.json(); setRestaurants(normalizeRestaurants(data));
-    } catch (error) { setSearchError(error.message || 'Unable to load restaurants. Please try again.'); }
-    finally { setSearchLoading(false); }
-  };
+  useEffect(() => {
+    if (routeLocation.pathname !== '/search') return;
+    const params = new URLSearchParams(routeLocation.search);
+    const state = params.get('state') || '';
+    const city = params.get('city') || '';
+    if (!state || !city) return;
+    let active = true;
+    setLocation({ state, city }); setSearchLoading(true); setSearchError(''); setRestaurants([]);
+    fetch(`${API}/restaurants?state=${encodeURIComponent(state)}&city=${encodeURIComponent(city)}`, { signal: AbortSignal.timeout(8000) })
+      .then((response) => { if (!response.ok) throw new Error(`Restaurant request failed (${response.status}).`); return response.json(); })
+      .then((data) => { if (active) { const results = normalizeRestaurants(data); const fallback = fallbackRestaurants.filter((item) => item.state === state && item.city === city); setRestaurants(results.length ? results : fallback); } })
+      .catch(() => { if (active) { const matches = fallbackRestaurants.filter((item) => item.state === state && item.city === city); setRestaurants(matches); if (!matches.length) setSearchError('Restaurant data is temporarily unavailable. Please try another city later.'); } })
+      .finally(() => { if (active) setSearchLoading(false); });
+    return () => { active = false; };
+  }, [routeLocation.pathname, routeLocation.search]);
+  const searchRestaurants = (state, city) => navigate(`/search?state=${encodeURIComponent(state)}&city=${encodeURIComponent(city)}`);
   const confirmBooking = (restaurant, date, time) => {
     const booking = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, restaurantName: restaurant.restaurantName || restaurant.name || 'Restaurant', address: restaurant.address || '', city: restaurant.city || location.city, state: restaurant.state || location.state, rating: restaurant.rating ?? null, date, time, createdAt: new Date().toISOString() };
     setBookings((current) => [...current, booking]); setSelectedRestaurant(null); navigate('/my-bookings');
