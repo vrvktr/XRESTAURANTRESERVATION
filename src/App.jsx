@@ -11,12 +11,29 @@ const fallbackRestaurants = [
   { restaurantName: 'The Greenhouse Table', city: 'Austin', state: 'Texas', address: '603 West 6th Street', rating: 4.6 },
   { restaurantName: 'Lone Star Kitchen', city: 'Austin', state: 'Texas', address: '2100 East Cesar Chavez Street', rating: 4.5 }
 ];
+function normalizeBooking(booking) {
+  const rawDate = booking.date ?? booking.bookingDate ?? booking.reservationDate;
+  const parsedDate = rawDate && new Date(rawDate);
+  const date = typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    ? rawDate
+    : parsedDate && !Number.isNaN(parsedDate.getTime()) ? dateKey(parsedDate) : '';
+  return {
+    ...booking,
+    id: booking.id || `${booking.restaurantName || booking.restaurant || 'booking'}-${rawDate || ''}`,
+    restaurantName: booking.restaurantName || booking.restaurant || booking.name || 'Restaurant',
+    address: booking.address || '',
+    date,
+    time: booking.time || booking.timeSlot || booking.reservationTime || '',
+    city: booking.city || '',
+    state: booking.state || ''
+  };
+}
 const getBookings = () => {
-  try { const value = JSON.parse(localStorage.getItem('bookings') || '[]'); return Array.isArray(value) ? value : []; }
+  try { const value = JSON.parse(localStorage.getItem('bookings') || localStorage.getItem('reservations') || '[]'); return Array.isArray(value) ? value.map(normalizeBooking) : []; }
   catch { return []; }
 };
 const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const formatDate = (value) => new Date(`${value}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+const formatDate = (value) => { const date = value && new Date(`${value}T12:00:00`); return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'Date to be confirmed'; };
 const slots = { Morning: ['9:00 AM', '10:00 AM', '11:00 AM'], Afternoon: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'], Evening: ['5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM', '9:00 PM'] };
 
 function Navbar() {
@@ -78,7 +95,7 @@ function BookingModal({ restaurant, onClose, onConfirm }) {
   const [period, setPeriod] = useState('Evening');
   const [error, setError] = useState('');
   useEffect(() => { const handleKey = (event) => { if (event.key === 'Escape') onClose(); }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey); }, [onClose]);
-  return <div className="modal-backdrop-custom" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section className="booking-modal" role="dialog" aria-modal="true" aria-labelledby="bookingTitle"><div className="modal-header-custom"><div><p className="eyebrow">MAKE IT OFFICIAL</p><h2 id="bookingTitle">Reserve your table</h2></div><button className="close-button" type="button" onClick={onClose} aria-label="Close booking dialog">×</button></div><div className="modal-restaurant"><span className="restaurant-mark" aria-hidden="true">✳</span><div><h3>{restaurant.restaurantName || restaurant.name || 'Restaurant'}</h3><p>{restaurant.address || `${restaurant.city || ''}, ${restaurant.state || ''}`}</p></div></div><label className="form-label" htmlFor="bookingDate">Choose a date</label><input id="bookingDate" className="form-control date-input" type="date" min={minDate} max={dateKey(max)} value={date} onChange={(e) => { setDate(e.target.value); setSlot(''); setError(''); }} required /><p className="date-hint">Reservations are available today and up to 7 days ahead.</p><p className="period-title">Today</p><div className="period-tabs">{Object.keys(slots).map((name) => <button key={name} type="button" className={period === name ? 'period-tab active' : 'period-tab'} onClick={() => { setPeriod(name); setSlot(''); }}>{name}</button>)}</div><div className="slot-grid">{slots[period].map((time) => <button type="button" key={time} className={slot === time ? 'slot-button selected' : 'slot-button'} onClick={() => { setSlot(time); setError(''); }}>{time}</button>)}</div>{error && <p className="error-message" role="alert">{error}</p>}<button className="button-primary w-100 confirm-button" type="button" onClick={() => { if (!date || date < minDate || date > dateKey(max)) { setError('Please choose a date within the next 7 days.'); return; } if (!slot) { setError('Please select an available time slot.'); return; } onConfirm(restaurant, date, slot); }}>Confirm reservation <span aria-hidden="true">↗</span></button></section></div>;
+  return <div className="modal-backdrop-custom" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section className="booking-modal" role="dialog" aria-modal="true" aria-labelledby="bookingTitle"><div className="modal-header-custom"><div><p className="eyebrow">MAKE IT OFFICIAL</p><h2 id="bookingTitle">Reserve your table</h2></div><button className="close-button" type="button" onClick={onClose} aria-label="Close booking dialog">×</button></div><div className="modal-restaurant"><span className="restaurant-mark" aria-hidden="true">✳</span><div><h3>{restaurant.restaurantName || restaurant.name || 'Restaurant'}</h3><p>{restaurant.address || `${restaurant.city || ''}, ${restaurant.state || ''}`}</p></div></div><label className="form-label" htmlFor="bookingDate">Choose a date</label><input id="bookingDate" className="form-control date-input" type="date" min={minDate} max={dateKey(max)} value={date} onChange={(e) => { setDate(e.target.value); setSlot(''); setError(''); }} required /><p className="date-hint">Reservations are available today and up to 7 days ahead.</p><p className="period-title">Today</p><div className="period-tabs">{Object.keys(slots).map((name) => <button key={name} type="button" className={period === name ? 'period-tab active' : 'period-tab'} onClick={() => { setPeriod(name); setSlot(''); }}><p>{name}</p></button>)}</div><div className="slot-grid">{slots[period].map((time) => <button type="button" key={time} className={slot === time ? 'slot-button selected' : 'slot-button'} onClick={() => { setSlot(time); setError(''); }}>{time}</button>)}</div>{error && <p className="error-message" role="alert">{error}</p>}<button className="button-primary w-100 confirm-button" type="button" onClick={() => { if (!date || date < minDate || date > dateKey(max)) { setError('Please choose a date within the next 7 days.'); return; } if (!slot) { setError('Please select an available time slot.'); return; } onConfirm(restaurant, date, slot); }}>Confirm reservation <span aria-hidden="true">↗</span></button></section></div>;
 }
 
 function LandingPage({ states, statesLoading, statesError, onSearch }) {
@@ -92,7 +109,7 @@ function SearchResultsPage({ states, restaurants, loading, error, city, onSearch
 }
 
 function MyBookingsPage({ bookings, onCancel }) {
-  return <main className="container page-container bookings-page"><div className="page-title-row"><div><p className="eyebrow">YOUR PLANS, ALL IN ONE PLACE</p><h1>My Bookings</h1><p className="page-subtitle">Good food is better when it's on the calendar.</p></div><Link className="button-primary" to="/">Find a restaurant <span aria-hidden="true">↗</span></Link></div>{bookings.length ? <div className="booking-list">{bookings.slice().reverse().map((booking) => <article className="booking-card" key={booking.id}><div className="booking-date-badge"><span>{new Date(`${booking.date}T12:00:00`).toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}</span><strong>{new Date(`${booking.date}T12:00:00`).getDate()}</strong></div><div className="booking-details"><span className="booking-confirmed">✓ Reservation saved</span><h2>{booking.restaurantName}</h2><p>{booking.address}</p><div className="booking-meta"><span>▦ {formatDate(booking.date)}</span><span>◷ {booking.time}</span><span>⌖ {booking.city}, {booking.state}</span></div></div><button type="button" className="cancel-button" onClick={() => onCancel(booking.id)}>Remove</button></article>)}</div> : <div className="empty-state"><span className="empty-icon">♡</span><h2>No reservations yet</h2><p>Your next favourite meal is waiting to be found.</p><Link className="button-primary" to="/">Find Restaurants <span aria-hidden="true">↗</span></Link></div>}</main>;
+  return <main className="container page-container bookings-page"><div className="page-title-row"><div><p className="eyebrow">YOUR PLANS, ALL IN ONE PLACE</p><h1>My Bookings</h1><p className="page-subtitle">Good food is better when it's on the calendar.</p></div><Link className="button-primary" to="/">Find a restaurant <span aria-hidden="true">↗</span></Link></div>{bookings.length ? <div className="booking-list">{bookings.slice().reverse().map((booking) => { const date = booking.date && new Date(`${booking.date}T12:00:00`); const validDate = date && !Number.isNaN(date.getTime()); return <article className="booking-card" key={booking.id}><div className="booking-date-badge"><span>{validDate ? date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : 'DATE'}</span><strong>{validDate ? date.getDate() : '—'}</strong></div><div className="booking-details"><span className="booking-confirmed">✓ Reservation saved</span><h2>{booking.restaurantName}</h2><p>{booking.address}</p><div className="booking-meta"><span>▦ {formatDate(booking.date)}</span><span>◷ {booking.time}</span><span>⌖ {booking.city}, {booking.state}</span></div></div><button type="button" className="cancel-button" onClick={() => onCancel(booking.id)}>Remove</button></article>; })}</div> : <div className="empty-state"><span className="empty-icon">♡</span><h2>No reservations yet</h2><p>Your next favourite meal is waiting to be found.</p><Link className="button-primary" to="/">Find Restaurants <span aria-hidden="true">↗</span></Link></div>}</main>;
 }
 
 function Footer() { return <footer className="site-footer"><div className="container footer-inner"><Link className="navbar-brand brand" to="/">table<span>&</span>thyme</Link><p>Good food brings us together.</p><span>© {new Date().getFullYear()} Table & Thyme</span></div></footer>; }
@@ -114,7 +131,7 @@ export default function App() {
     fetch(`${API}/states`, { signal: AbortSignal.timeout(8000) }).then((res) => { if (!res.ok) throw new Error('Unable to load states.'); return res.json(); }).then((data) => { if (active) setStates([...new Set([...readStates(data), ...fallbackStates])]); }).catch(() => { if (active) setStates(fallbackStates); }).finally(() => { if (active) setStatesLoading(false); });
     return () => { active = false; };
   }, []);
-  useEffect(() => { localStorage.setItem('bookings', JSON.stringify(bookings)); }, [bookings]);
+  useEffect(() => { const saved = JSON.stringify(bookings); localStorage.setItem('bookings', saved); localStorage.setItem('reservations', saved); }, [bookings]);
   useEffect(() => {
     if (routeLocation.pathname !== '/search') return;
     const params = new URLSearchParams(routeLocation.search);
