@@ -12,7 +12,7 @@ const fallbackRestaurants = [
   { restaurantName: 'Lone Star Kitchen', city: 'Austin', state: 'Texas', address: '2100 East Cesar Chavez Street', rating: 4.5 }
 ];
 function normalizeBooking(booking) {
-  const rawDate = booking.date ?? booking.bookingDate ?? booking.reservationDate;
+  const rawDate = [booking.date, booking.bookingDate, booking.reservationDate, booking.reservation_date, booking.dateTime, booking.date_time].find((value) => value !== null && value !== undefined && value !== '');
   const parsedDate = rawDate && new Date(rawDate);
   const date = typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
     ? rawDate
@@ -29,8 +29,20 @@ function normalizeBooking(booking) {
   };
 }
 const getBookings = () => {
-  try { const value = JSON.parse(localStorage.getItem('bookings') || localStorage.getItem('reservations') || '[]'); return Array.isArray(value) ? value.map(normalizeBooking) : []; }
+  try {
+    const bookings = JSON.parse(localStorage.getItem('bookings') || '[]');
+    const reservations = JSON.parse(localStorage.getItem('reservations') || '[]');
+    const value = Array.isArray(bookings) && bookings.length ? bookings : reservations;
+    return Array.isArray(value) ? value.map(normalizeBooking) : [];
+  }
   catch { return []; }
+};
+const saveBookings = (bookings) => {
+  try {
+    const saved = JSON.stringify(bookings);
+    localStorage.setItem('bookings', saved);
+    localStorage.setItem('reservations', saved);
+  } catch { /* Keep the in-memory booking available if browser storage is unavailable. */ }
 };
 const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const formatDate = (value) => { const date = value && new Date(`${value}T12:00:00`); return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }) : 'Date to be confirmed'; };
@@ -131,7 +143,6 @@ export default function App() {
     fetch(`${API}/states`, { signal: AbortSignal.timeout(8000) }).then((res) => { if (!res.ok) throw new Error('Unable to load states.'); return res.json(); }).then((data) => { if (active) setStates([...new Set([...readStates(data), ...fallbackStates])]); }).catch(() => { if (active) setStates(fallbackStates); }).finally(() => { if (active) setStatesLoading(false); });
     return () => { active = false; };
   }, []);
-  useEffect(() => { const saved = JSON.stringify(bookings); localStorage.setItem('bookings', saved); localStorage.setItem('reservations', saved); }, [bookings]);
   useEffect(() => {
     if (routeLocation.pathname !== '/search') return;
     const params = new URLSearchParams(routeLocation.search);
@@ -150,8 +161,10 @@ export default function App() {
   const searchRestaurants = (state, city) => navigate(`/search?state=${encodeURIComponent(state)}&city=${encodeURIComponent(city)}`);
   const confirmBooking = (restaurant, date, time) => {
     const booking = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, restaurantName: restaurant.restaurantName || restaurant.name || 'Restaurant', address: restaurant.address || '', city: restaurant.city || location.city, state: restaurant.state || location.state, rating: restaurant.rating ?? null, date, time, createdAt: new Date().toISOString() };
-    setBookings((current) => [...current, booking]); setSelectedRestaurant(null); navigate('/my-bookings');
+    const nextBookings = [...bookings, booking];
+    saveBookings(nextBookings);
+    setBookings(nextBookings); setSelectedRestaurant(null); navigate('/my-bookings');
   };
-  const cancelBooking = (id) => setBookings((current) => current.filter((booking) => booking.id !== id));
+  const cancelBooking = (id) => { const nextBookings = bookings.filter((booking) => booking.id !== id); saveBookings(nextBookings); setBookings(nextBookings); };
   return <><Navbar /><Routes><Route path="/" element={<LandingPage states={states} statesLoading={statesLoading} statesError={statesError} onSearch={searchRestaurants} />} /><Route path="/search" element={<SearchResultsPage states={states} restaurants={restaurants} loading={searchLoading} error={searchError} city={location.city || new URLSearchParams(window.location.search).get('city') || ''} onSearch={searchRestaurants} onBook={setSelectedRestaurant} />} /><Route path="/my-bookings" element={<><MyBookingsPage bookings={bookings} onCancel={cancelBooking} /><Footer /></>} /><Route path="*" element={<main className="container page-container empty-state"><h1>Page not found</h1><Link className="button-primary" to="/">Back to home</Link></main>} /></Routes>{selectedRestaurant && <BookingModal restaurant={selectedRestaurant} onClose={() => setSelectedRestaurant(null)} onConfirm={confirmBooking} />}</>;
 }
